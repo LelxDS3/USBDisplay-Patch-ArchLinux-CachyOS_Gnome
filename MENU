@@ -1,0 +1,108 @@
+#!/bin/bash
+# MENU
+#
+# Menu interactivo para cambiar la resolucion del monitor USB MacroSilicon.
+# DETECTA DINAMICAMENTE los modos que expone el driver con su Hz real
+# (modetest) en vez de usar una tabla fija: asi sirve para cualquier monitor
+# (60Hz, 75Hz, 100Hz, etc) sin errores de rate.
+# Al elegir una resolucion, la aplica al reiniciar (GNOME lee monitors.xml al
+# iniciar sesion, sin modeset en caliente -> no crashea el kernel).
+#
+# Uso:   sudo ./MENU
+#
+# Depende de: whiptail (menu), modetest (deteccion de modos, opcional) y
+#             cambiar-resolucion.sh (motor).
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+GENERATOR="$DIR/cambiar-resolucion.sh"
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: ejecuta con sudo." >&2
+    exit 1
+fi
+
+if [ ! -x "$GENERATOR" ]; then
+    echo "Error: no encuentro $GENERATOR" >&2
+    exit 1
+fi
+
+# --- detectar el conector DRM del monitor USB ---
+# igual que en cambiar-resolucion.sh: card0-HDMI-A-2 -> nombre modetest HDMI-A-2
+USB_DRM=""
+for c in /sys/class/drm/card*-*; do
+    [ -e "$c/status" ] || continue
+    [ "$(cat "$c/status" 2>/dev/null)" = "connected" ] || continue
+    dev="$(readlink -f "$c/device" 2>/dev/null)"
+    case "$dev" in
+        *msdisp_plat*|*usbevdi*) USB_DRM="$(basename "$c")"; break ;;
+    esac
+done
+
+# --- listar modos detectados: WxH + Hz real, desde modetest ---
+MODES=()
+if [ -n "$USB_DRM" ] && command -v modetest >/dev/null 2>&1; then
+    CONN="${USB_DRM#*-}"              # card0-HDMI-A-2 -> HDMI-A-2
+    while IFS=$'\t' read -r MODE RATE; do
+        [ -n "$MODE" ] && MODES+=("$MODE" "$RATE")
+    done < <(modetest -c 2>/dev/null | awk -v conn="$CONN" '
+        $3 == "connected" && $4 == conn { in_conn=1; next }
+        in_conn && $1 ~ /^#/ { printf "%s\t%.4f\n", $2, $12*1000/($7*$11) }
+        in_conn && $1 ~ /^props/ { exit }
+    ')
+fi
+
+# --- fallback: tabla estatica si no hay modetest ni conector ---
+if [ ${#MODES[@]} -eq 0 ]; then
+    echo "Aviso: no se detectaron modos via modetest; uso tabla estatica." >&2
+    for r in "1920x1080 60.00" "1680x1050 60.00" "1440x900 59.99" \
+             "1400x1050 60.00" "1366x768 59.97" "1360x768 59.95" \
+             "1280x1024 59.95" "1280x960 59.99" "1280x800 59.96" \
+             "1280x768 59.95" "1280x720 59.97" "1280x600 59.96" \
+             "1152x864 59.97" "1024x768 59.95" "800x600 59.96" \
+             "640x480 59.94"; do
+        read -r M R <<<"$r"
+        MODES+=("$M" "$R")
+    done
+fi
+
+# --- construir lista de whiptail: etiqueta WxH, descripcion WxH + Hz ---
+ARGS=()
+for ((i = 0; i < ${#MODES[@]}; i += 2)); do
+    M="${MODES[$i]}"
+    R="${MODES[$i + 1]}"
+    ARGS+=("$M" "$M @ ${R} Hz")
+done
+
+N=${#MODES[@]}
+H_MENU=$((N / 2 + 8))
+[ "$H_MENU" -gt 22 ] && H_MENU=22
+[ "$H_MENU" -lt 10 ] && H_MENU=10
+
+CHOICE=$(whiptail --title "Resolucion monitor USB" \
+    --menu "Modos detectados por el driver (Hz reales). Aplica al reiniciar:" \
+    "$H_MENU" 70 "$((N / 2))" "${ARGS[@]}" 3>&1 1>&2 2>&3)
+
+if [ -z "$CHOICE" ]; then
+    echo "Cancelado. Sin cambios."
+    exit 0
+fi
+
+# recuperar el Hz real de la opcion elegida
+RATE=""
+for ((i = 0; i < ${#MODES[@]}; i += 2)); do
+    [ "${MODES[$i]}" = "$CHOICE" ] && { RATE="${MODES[$i + 1]}"; break; }
+done
+
+W="${CHOICE%%x*}"
+H="${CHOICE##*x}"
+
+echo "Elegida: ${W}x${H} @ ${RATE} Hz"
+
+if whiptail --title "Confirmar" \
+    --yesno "Cambiar el monitor USB a ${W}x${H} @ ${RATE} Hz y reiniciar ahora?" \
+    8 60; then
+    exec "$GENERATOR" "$W" "$H" "$RATE"
+else
+    echo "Cancelado. Sin cambios."
+    exit 0
+fi
