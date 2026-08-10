@@ -162,8 +162,8 @@ cat /sys/devices/usbevdi/msdisp_plat.0/pipeline0/frame
 ### Proceso de instalación desde el terminal
 
 ```bash
-git clone https://github.com/TU_USUARIO/USBDisplay-Patch-ArchLinux-CachyOS-Gnome.git
-cd USBDisplay-Patch-ArchLinux-CachyOS-Gnome
+git clone https://github.com/LelxDS3/USBDisplay-Patch-ArchLinux-CachyOS_Gnome.git
+cd USBDisplay-Patch-ArchLinux-CachyOS_Gnome
 sudo bash install.sh
 ```
 
