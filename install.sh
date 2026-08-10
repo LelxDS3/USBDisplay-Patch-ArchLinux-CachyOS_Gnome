@@ -22,6 +22,12 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
+# Los ZIP de GitHub no preservan el bit de ejecucion. Si MENU y
+# cambiar-resolucion.sh llegaron sin +x, este instalador los corrige
+# para que el paso de resolucion (7/7) pueda ejecutarlos.
+chmod +x "$(dirname "$0")/MENU" 2>/dev/null || true
+chmod +x "$(dirname "$0")/cambiar-resolucion.sh" 2>/dev/null || true
+
 echo "==> [1/6] Comprobando requisitos..."
 for cmd in dkms make gcc; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
