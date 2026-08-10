@@ -1,4 +1,4 @@
-# USBDisplay-Patch-ArchLinux-CachyOS-Gnome — DRIVER FINAL
+# USBDisplay-Patch-ArchLinux-CachyOS-Gnome
 
 Idioma: **Español** | [English](README.en.md)
 
