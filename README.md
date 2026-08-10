@@ -188,9 +188,9 @@ sudo ./cambiar-resolucion.sh 1280 1024         # tasa real autodetectada
 sudo ./cambiar-resolucion.sh 800 600 59.96     # o fuerza la tasa explícitamente
 ```
 
-`MENU` lista dinámicamente los modos del conector (de 640×480 hasta 1920×1080,
-salvo 1366×768 que el driver no expone) con su tasa real, así sirve para
-cualquier monitor (60 Hz, 75 Hz, etc.) sin errores de rate. Si `modetest` no
+`MENU` lista dinámicamente los modos del conector (de 640×480 hasta 1920×1080)
+con su tasa real, así sirve para cualquier monitor 
+(60 Hz, 75 Hz, etc.) sin errores de rate. Si `modetest` no
 está disponible, usa una tabla estática como respaldo.
 
 Cada cambio:
