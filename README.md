@@ -159,7 +159,7 @@ cat /sys/devices/usbevdi/msdisp_plat.0/pipeline0/frame
 - Arch Linux / CachyOS - Gnome.
 - Dependencias: `sudo pacman -S dkms base-devel linux-headers`
 
-### Proceso de instalación desde el terminal
+### Instalación desde el terminal
 
 ```bash
 git clone https://github.com/LelxDS3/USBDisplay-Patch-ArchLinux-CachyOS_Gnome.git
