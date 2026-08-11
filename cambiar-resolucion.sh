@@ -1,22 +1,12 @@
 #!/bin/bash
 # cambiar-resolucion.sh <ANCHO> <ALTO> [rate]
-#
-# Generador comun: cambia la resolucion del monitor USB MacroSilicon en el
-# arranque editando ~/.config/monitors.xml (el mapa que GNOME lee al iniciar
-# sesion) y reinicia.
-#
-# Por que esto y no "Configuracion > Pantallas"?
-#   Cambiar la resolucion EN CALIENTE desde GNOME provoca un modeset mientras
-#   el hilo KMS esta copiando el framebuffer anterior -> el driver msdisp
-#   crashea con un page fault (use-after-free del fb). Fijar la resolucion en
-#   monitors.xml hace que se aplique al iniciar sesion, sin cambio en caliente
-#   y sin tocar el driver: el propio driver emite el refresh que el bus USB 2.0
-#   permite (a menos pixeles, mas Hz reales).
-#
-# Uso:   sudo ./cambiar-resolucion.sh 800 600
-#        sudo ./cambiar-resolucion.sh 800 600 59.96
-# (rate por defecto: se lee del driver con modetest - el refresh real del modo
-#  CVT no es 60.0 exacto, y GNOME exige coincidencia; fallback a tabla estatica)
+# Fija la resolucion del monitor USB MacroSilicon en monitors.xml y reinicia.
+# Cambiar EN CALIENTE desde GNOME crashea el kernel (use-after-free del fb);
+# monitors.xml se aplica al iniciar sesion, sin modeset en caliente.
+# Uso: sudo ./cambiar-resolucion.sh 800 600 [59.96]
+# EN: Set the MacroSilicon USB monitor resolution in monitors.xml and reboot.
+# Hot-changing from GNOME crashes the kernel (fb use-after-free); monitors.xml
+# is applied at login, no hot modeset.
 
 set -e
 
@@ -34,7 +24,8 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# --- usuario real (con sudo HOME apunta a /root) ---
+# Usuario real (con sudo HOME apunta a /root)
+# EN: Real user (sudo sets HOME to /root)
 RUNUSER="${SUDO_USER:-$USER}"
 USER_HOME="$(getent passwd "$RUNUSER" | cut -d: -f6)"
 CONF="$USER_HOME/.config/monitors.xml"
@@ -44,13 +35,11 @@ if [ ! -f "$CONF" ]; then
     exit 1
 fi
 
-# --- resolver el rate real: el refresh del modo CVT no es 60.0 exacto ---
-# GNOME guarda el rate real (ej 59.96, 59.991...) y al leerlo busca un modo
-# con esa misma tasa; si no coincide descarta el monitors.xml.
-# Fuentes (por orden): parametro explicito > modetest > tabla estatica.
+# Rate real: parametro > modetest > tabla estatica
+# (el refresh CVT no es 60.0 exacto; GNOME exige coincidencia)
+# EN: Real rate: arg > modetest > static table (CVT refresh isn't exactly 60.0)
 if [ -z "$RATE" ]; then
-    # modetest -c:  #13 800x600 59.96 800 832 912 1024 600 603 607 624 38313
-    # $7=htot $11=vtot $12=clock(kHz) -> refresh = clock*1000/(htot*vtot)
+    # modetest: refresh = $12*1000/($7*$11) (clock/(htot*vtot))
     RATE="$(modetest -c 2>/dev/null | awk -v w="$W" -v h="$H" \
         '$1 ~ /^#/ && $2 == w "x" h { printf "%.6f", $12*1000/($7*$11); exit }')"
 fi
@@ -83,7 +72,8 @@ fi
 
 echo "==> Tasa de refresco real para ${W}x${H}: $RATE Hz"
 
-# --- detectar el conector DRM del monitor USB (card del msdisp) ---
+# Conector DRM del monitor USB
+# EN: USB monitor DRM connector
 USB_CARD=""
 for c in /sys/class/drm/card*-*; do
     [ -e "$c/status" ] || continue
@@ -99,7 +89,8 @@ if [ -z "$USB_CARD" ]; then
     exit 1
 fi
 
-# convertir card0-HDMI-A-2 -> HDMI-2 (nombre que usa GNOME)
+# card0-HDMI-A-2 -> HDMI-2 (nombre que usa GNOME)
+# EN: card0-HDMI-A-2 -> HDMI-2 (GNOME connector name)
 case "$USB_CARD" in
     card*-HDMI-A-*) CONN="HDMI-${USB_CARD##*-HDMI-A-}" ;;
     card*-eDP-*)    CONN="eDP-${USB_CARD##*-eDP-}" ;;
@@ -111,11 +102,10 @@ esac
 echo "==> Monitor USB: conector '$CONN'"
 echo "==> Nueva resolucion: ${W}x${H} @ ${RATE} (aplicada en el proximo login/reboot)"
 
-# --- marcar la resolucion como PREFERIDA en el driver ---
-# El driver genera su modo PREFERRED desde pref_w/pref_h al arrancar. Asi GNOME
-# adopta esta resolucion sin modeset en caliente (+ elimina el use-after-free
-# de usb_hal_update_frame que dejaba la pantalla gris al cambiar de modo al
-# iniciar sesion). Tambien se actualiza monitors.xml por coherencia.
+# Marca la resolucion como PREFERRED del driver (pref_w/pref_h): GNOME la
+# adopta sin modeset en caliente -> evita el use-after-free (pantalla gris)
+# EN: Set it as the driver PREFERRED mode (pref_w/pref_h) so GNOME adopts it
+# without a hot modeset -> avoids the use-after-free grey screen
 PREF_CONF="/etc/modprobe.d/msdisp-pref.conf"
 if ! printf 'options usbdisp_drm pref_w=%s pref_h=%s\n' "$W" "$H" > "$PREF_CONF"; then
     echo "Error: no pude escribir $PREF_CONF." >&2
@@ -123,18 +113,26 @@ if ! printf 'options usbdisp_drm pref_w=%s pref_h=%s\n' "$W" "$H" > "$PREF_CONF"
 fi
 echo "==> Modo preferido del driver: $PREF_CONF"
 
-# --- backup ---
+# Backup del archivo antes de editarlo
+# EN: Back up the file before editing
 cp "$CONF" "$CONF.bak-res"
 echo "==> Backup: $CONF.bak-res"
 
-# --- editar el XML con python (cambia en TODAS las configs el monitor USB) ---
-ubicado="$(command -v python3 || echo /usr/bin/python3)"
-"$ubicado" - "$CONF" "$CONN" "$W" "$H" "$RATE" <<'PY'
-import re, sys, collections
+# Editar el XML con python: cambia resolucion y recoloca las posiciones x por
+# fila (mutter rechaza el archivo -> "Logical monitors not adjacent")
+# EN: Edit the XML with python: change the resolution and re-lay x positions by
+# row (mutter rejects the file otherwise -> "Logical monitors not adjacent")
+python3 - "$CONF" "$CONN" "$W" "$H" "$RATE" <<'PY'
+import re, sys
 
-path, conn, w, h, rate = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-data = open(path).read()
+conf, conn, w, h, rate = sys.argv[1:6]
 w, h = int(w), int(h)
+
+data = open(conf).read()
+
+def lm_conn(blk):
+    m = re.search(r"<connector>([^<]+)</connector>", blk)
+    return m.group(1) if m else ""
 
 def lm_x(blk):
     m = re.search(r"<x>(\d+)</x>", blk)
@@ -148,58 +146,48 @@ def lm_width(blk):
     m = re.search(r"<width>(\d+)</width>", blk)
     return int(m.group(1)) if m else 0
 
-def lm_conn(blk):
-    m = re.search(r"<connector>([^<]+)</connector>", blk)
-    return m.group(1) if m else ""
-
-changed = 0
-def repl_res(m):
-    global changed
+found = [False]
+def set_mode(m):
     blk = m.group(0)
     if lm_conn(blk) == conn:
-        blk = re.sub(r"(<width>)\d+(</width>)", r"\g<1>%d\g<2>" % w, blk, count=1)
-        blk = re.sub(r"(<height>)\d+(</height>)", r"\g<1>%d\g<2>" % h, blk, count=1)
-        blk = re.sub(r"(<rate>)[0-9.]+(</rate>)", r"\g<1>%s\g<2>" % rate, blk, count=1)
-        changed += 1
+        blk = re.sub(r"(<width>)\d+(</width>)", r"\g<1>%d\g<2>" % w, blk, 1)
+        blk = re.sub(r"(<height>)\d+(</height>)", r"\g<1>%d\g<2>" % h, blk, 1)
+        blk = re.sub(r"(<rate>)[0-9.]+(</rate>)", r"\g<1>%s\g<2>" % rate, blk, 1)
+        found[0] = True
     return blk
 
-# 1) cambiar resolucion del monitor USB en todos los logicalmonitor
-data = re.sub(r"<logicalmonitor>.*?</logicalmonitor>", repl_res, data,
-              count=0, flags=re.S)
-if not changed:
+data = re.sub(r"<logicalmonitor>.*?</logicalmonitor>", set_mode, data, flags=re.S)
+
+if not found[0]:
+    sys.stderr.write("Error: no se encontro el monitor %s en monitors.xml\n" % conn)
     sys.exit(1)
 
-# 2) reacomodar posiciones por fila para que queden adjacentes
-#    (mutter rechaza el archivo -> "Logical monitors not adjacent")
-lms = re.findall(r"<logicalmonitor>.*?</logicalmonitor>", data, flags=re.S)
-
-rows = collections.defaultdict(list)
-for blk in lms:
-    rows[lm_y(blk)].append((lm_x(blk), blk))
+# Recoloca posiciones: por fila (mismo y), de izquierda a derecha
+# EN: Re-lay positions: by row (same y), left to right
+blocks = re.findall(r"<logicalmonitor>.*?</logicalmonitor>", data, flags=re.S)
+rows = {}
+for blk in blocks:
+    rows.setdefault(lm_y(blk), []).append((lm_x(blk), blk))
 
 newpos = {}
-for y, row in rows.items():
-    row.sort(key=lambda t: t[0])
-    xcur = 0
-    for x, blk in row:
-        newpos[(y, x)] = xcur
-        xcur += lm_width(blk)
+for y, lst in rows.items():
+    x = 0
+    for _, blk in sorted(lst):
+        newpos[id(blk)] = x
+        x += lm_width(blk)
 
-def repl_pos(m):
+def set_pos(m):
     blk = m.group(0)
-    key = (lm_y(blk), lm_x(blk))
-    if key in newpos:
-        nx = newpos[key]
-        blk = re.sub(r"(<x>)\d+(</x>)", r"\g<1>%d\g<2>" % nx, blk, count=1)
+    if id(blk) in newpos:
+        blk = re.sub(r"(<x>)\d+(</x>)", r"\g<1>%d\g<2>" % newpos[id(blk)], blk, 1)
     return blk
 
-data = re.sub(r"<logicalmonitor>.*?</logicalmonitor>", repl_pos, data,
-              count=0, flags=re.S)
-open(path, "w").write(data)
-sys.exit(0)
+data = re.sub(r"<logicalmonitor>.*?</logicalmonitor>", set_pos, data, flags=re.S)
+
+open(conf, "w").write(data)
+print("OK: monitors.xml actualizado (%s -> %dx%d @ %s)" % (conn, w, h, rate))
 PY
 
-echo "==> monitors.xml actualizado (logicalmonitors con '$CONN': 1)."
-echo "==> Reiniciando..."
+echo "==> Reiniciando para aplicar..."
 sync
-reboot now
+reboot

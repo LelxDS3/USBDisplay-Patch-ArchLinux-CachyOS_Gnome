@@ -1,17 +1,12 @@
 #!/bin/bash
-# MENU
-#
-# Menu interactivo para cambiar la resolucion del monitor USB MacroSilicon.
-# DETECTA DINAMICAMENTE los modos que expone el driver con su Hz real
-# (modetest) en vez de usar una tabla fija: asi sirve para cualquier monitor
-# (60Hz, 75Hz, 100Hz, etc) sin errores de rate.
-# Al elegir una resolucion, la aplica al reiniciar (GNOME lee monitors.xml al
-# iniciar sesion, sin modeset en caliente -> no crashea el kernel).
-#
-# Uso:   sudo ./MENU
-#
-# Depende de: whiptail (menu), modetest (deteccion de modos, opcional) y
-#             cambiar-resolucion.sh (motor).
+# MENU: cambia la resolucion del monitor USB MacroSilicon al reiniciar.
+# Detecta en vivo los modos + Hz reales del driver (modetest); asi sirve para
+# cualquier monitor sin errores de rate. GNOME aplica monitors.xml al iniciar
+# sesion, sin modeset en caliente -> no crashea el kernel.
+# Uso: sudo ./MENU | Depende: whiptail, modetest (opcional), cambiar-resolucion.sh
+# EN: MENU: change the MacroSilicon USB monitor resolution on reboot. Detects
+# the driver's real modes + Hz live (modetest) so it fits any monitor without
+# rate errors. GNOME applies monitors.xml at login, no hot modeset -> no crash.
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 GENERATOR="$DIR/cambiar-resolucion.sh"
@@ -26,8 +21,8 @@ if [ ! -x "$GENERATOR" ]; then
     exit 1
 fi
 
-# --- detectar el conector DRM del monitor USB ---
-# igual que en cambiar-resolucion.sh: card0-HDMI-A-2 -> nombre modetest HDMI-A-2
+# Conector DRM del monitor USB (card0-HDMI-A-2 -> nombre modetest HDMI-A-2)
+# EN: USB monitor DRM connector (card0-HDMI-A-2 -> modetest name HDMI-A-2)
 USB_DRM=""
 for c in /sys/class/drm/card*-*; do
     [ -e "$c/status" ] || continue
@@ -38,7 +33,8 @@ for c in /sys/class/drm/card*-*; do
     esac
 done
 
-# --- listar modos detectados: WxH + Hz real, desde modetest ---
+# Lista WxH + Hz real via modetest (refresh = $12*1000/($7*$11): clock/(htot*vtot))
+# EN: List WxH + real Hz from modetest (refresh = $12*1000/($7*$11): clock/(htot*vtot))
 MODES=()
 if [ -n "$USB_DRM" ] && command -v modetest >/dev/null 2>&1; then
     CONN="${USB_DRM#*-}"              # card0-HDMI-A-2 -> HDMI-A-2
@@ -51,7 +47,8 @@ if [ -n "$USB_DRM" ] && command -v modetest >/dev/null 2>&1; then
     ')
 fi
 
-# --- fallback: tabla estatica si no hay modetest ni conector ---
+# Fallback: tabla estatica si no hay modetest ni conector
+# EN: Fallback: static table if modetest or connector are unavailable
 if [ ${#MODES[@]} -eq 0 ]; then
     echo "Aviso: no se detectaron modos via modetest; uso tabla estatica." >&2
     for r in "1920x1080 60.00" "1680x1050 60.00" "1440x900 59.99" \
@@ -65,7 +62,8 @@ if [ ${#MODES[@]} -eq 0 ]; then
     done
 fi
 
-# --- construir lista de whiptail: etiqueta WxH, descripcion WxH + Hz ---
+# Lista whiptail: etiqueta WxH, descripcion "WxH @ Hz"
+# EN: whiptail list: tag WxH, description "WxH @ Hz"
 ARGS=()
 for ((i = 0; i < ${#MODES[@]}; i += 2)); do
     M="${MODES[$i]}"
@@ -87,7 +85,8 @@ if [ -z "$CHOICE" ]; then
     exit 0
 fi
 
-# recuperar el Hz real de la opcion elegida
+# Recuperar el Hz real de la opcion elegida
+# EN: Recover the real Hz of the chosen option
 RATE=""
 for ((i = 0; i < ${#MODES[@]}; i += 2)); do
     [ "${MODES[$i]}" = "$CHOICE" ] && { RATE="${MODES[$i + 1]}"; break; }
